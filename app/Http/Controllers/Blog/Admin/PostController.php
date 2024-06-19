@@ -9,9 +9,14 @@ use Illuminate\Support\Str;
 use Illuminate\Http\Request;
 use App\Models\BlogPost;
 use App\Http\Requests\BlogPostCreateRequest;
+use App\Jobs\BlogPostAfterCreateJob;
+use App\Jobs\BlogPostAfterDeleteJob;
+use Illuminate\Foundation\Bus\DispatchesJobs;
 
 class PostController extends BaseController
 {
+    use DispatchesJobs;
+
     /**
      * @var BlogPostRepository
      */
@@ -25,7 +30,6 @@ class PostController extends BaseController
         parent::__construct();
         $this->blogPostRepository = app(BlogPostRepository::class); //app вертає об'єкт класа
         $this->blogCategoryRepository = app(BlogCategoryRepository::class);
-
     }
     /**
      * Display a listing of the resource.
@@ -45,7 +49,6 @@ class PostController extends BaseController
         $item = new BlogPost();
         $categoryList = $this->blogCategoryRepository->getForComboBox();
 
-
         return view('blog.admin.posts.edit', compact('item', 'categoryList'));
     }
 
@@ -59,6 +62,8 @@ class PostController extends BaseController
         $item = (new BlogPost())->create($data); //створюємо об'єкт і додаємо в БД
 
         if ($item) {
+            $job = new BlogPostAfterCreateJob($item);
+            $this->dispatch($job);
             return redirect()
                 ->route('blog.admin.posts.edit', [$item->id])
                 ->with(['success' => 'Успішно збережено']);
@@ -94,7 +99,7 @@ class PostController extends BaseController
     /**
      * Update the specified resource in storage.
      */
-    public function update(BlogPostUpdateRequest $request, string $id)
+    public function update(BlogPostUpdateRequest  $request, string $id)
     {
         $item = $this->blogPostRepository->getEdit($id);
         if (empty($item)) { //якщо ід не знайдено
@@ -104,7 +109,6 @@ class PostController extends BaseController
         }
 
         $data = $request->all(); //отримаємо масив даних, які надійшли з форми
-
 
         $result = $item->update($data); //оновлюємо дані об'єкта і зберігаємо в БД
 
@@ -128,7 +132,9 @@ class PostController extends BaseController
 
         //$result = BlogPost::find($id)->forceDelete(); //повне видалення з БД
 
+
         if ($result) {
+            BlogPostAfterDeleteJob::dispatch($id)->delay(20);
             return redirect()
                 ->route('blog.admin.posts.index')
                 ->with(['success' => "Запис id[$id] видалено"]);
